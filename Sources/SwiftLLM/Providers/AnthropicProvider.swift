@@ -22,13 +22,17 @@ public struct AnthropicProvider: LLMProvider {
     }
 
     private var modelSupportsVision: Bool {
-        // Claude 3 and Claude 4 models support vision
-        defaultModel.contains("claude-3") || defaultModel.contains("claude-4")
+        // Claude 3.x and Claude 4.x models support vision
+        defaultModel.contains("claude-3") ||
+        defaultModel.contains("claude-4") ||
+        defaultModel.contains("-4-")  // Matches 4-5, 4-1, etc.
     }
 
     private var modelContextWindow: Int {
-        // Claude 4.x models have 200K context window
-        if defaultModel.contains("claude-4") || defaultModel.contains("claude-3") {
+        // Claude 4.x and 3.x models have 200K context window
+        if defaultModel.contains("claude-3") ||
+           defaultModel.contains("claude-4") ||
+           defaultModel.contains("-4-") {  // Matches 4-5, 4-1, etc.
             return 200_000
         } else {
             return 100_000
@@ -36,8 +40,10 @@ public struct AnthropicProvider: LLMProvider {
     }
 
     private var modelMaxOutput: Int {
-        // Claude 4.5 models have 8K max output
-        if defaultModel.contains("claude-4") || defaultModel.contains("claude-3-5") {
+        // Claude 4.x and 3.5 models have 8K max output
+        if defaultModel.contains("claude-3-5") ||
+           defaultModel.contains("claude-4") ||
+           defaultModel.contains("-4-") {  // Matches 4-5, 4-1, etc.
             return 8192
         } else {
             return 4096
