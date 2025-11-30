@@ -50,6 +50,13 @@ SwiftLLM provides a unified interface for working with the latest LLM providers,
 - ✅ Server-Based AFM (larger MoE, 32K context)
 - ✅ Native FoundationModels framework integration (macOS 26+)
 
+### Local LLMs (OpenAI-Compatible)
+- ✅ Ollama (llama3.2, codellama, mistral, phi3, etc.)
+- ✅ LM Studio (any downloaded model)
+- ✅ LocalAI
+- ✅ llama.cpp server
+- ✅ Any OpenAI-compatible endpoint (vLLM, text-generation-inference, etc.)
+
 ## Installation
 
 ### Swift Package Manager
@@ -132,6 +139,43 @@ let server = AppleIntelligenceProvider.server(
 let response = try await onDevice.generateCompletion(
     prompt: "Draft a professional email about...",
     systemPrompt: nil,
+    options: GenerationOptions(temperature: 0.7)
+)
+```
+
+### Local LLMs (Ollama, LM Studio, etc.)
+
+```swift
+// Simple - just specify model name
+let ollama = LocalLLMProvider.ollama(model: "llama3.2")
+let lmStudio = LocalLLMProvider.lmStudio(model: "mistral-7b")
+
+// Full control with custom model configuration
+let customModel = LocalModelConfig(
+    name: "deepseek-coder-v2:16b",
+    contextWindow: 128_000,
+    supportsVision: false,
+    supportsToolCalling: false,
+    supportsStructuredOutput: true
+)
+let provider = LocalLLMProvider.ollama(model: customModel)
+
+// Remote server or custom port
+let remote = LocalLLMProvider.ollama(
+    model: "codellama",
+    host: "192.168.1.100",
+    port: 11434
+)
+
+// Any OpenAI-compatible server
+let vllm = LocalLLMProvider.openAICompatible(
+    baseURL: "http://my-server:8000",
+    model: "my-fine-tuned-model"
+)
+
+let response = try await provider.generateCompletion(
+    prompt: "Explain closures in Swift",
+    systemPrompt: "You are a Swift expert",
     options: GenerationOptions(temperature: 0.7)
 )
 ```
@@ -277,6 +321,15 @@ do {
 - ✅ Need real-time, low-latency responses
 - **Cost**: Free (on-device), TBD (server)
 
+### Choose Local LLMs When:
+- ✅ Complete data privacy (nothing leaves your machine/network)
+- ✅ No API costs (run your own hardware)
+- ✅ Want to use open-source models (Llama, Mistral, Phi, etc.)
+- ✅ Need to run fine-tuned or custom models
+- ✅ Developing offline or air-gapped environments
+- ✅ Experimenting with different models quickly
+- **Cost**: Free (your hardware)
+
 See [Documentation/AppleFoundationModels.md](Documentation/AppleFoundationModels.md) for detailed AFM guidance.
 
 ## Architecture
@@ -294,7 +347,8 @@ SwiftLLM/
 │   ├── AnthropicProvider.swift    # Claude 4.5, 4.x, 3.x support
 │   ├── OpenAIProvider.swift       # GPT-5.1, 5, 4.x support
 │   ├── XAIProvider.swift          # Grok 4.1, 2.x support
-│   └── AppleIntelligenceProvider.swift  # AFM on-device & server
+│   ├── AppleIntelligenceProvider.swift  # AFM on-device & server
+│   └── LocalLLMProvider.swift     # Ollama, LM Studio, LocalAI, etc.
 ├── Clients/
 │   ├── AnthropicAPIClient.swift   # Anthropic Messages API
 │   ├── OpenAIAPIClient.swift      # OpenAI Chat Completions API
@@ -332,13 +386,13 @@ See the [Examples](Examples/) directory for:
 - [x] OpenAI GPT provider (5.1, 5, 4.x)
 - [x] xAI Grok provider (4.1, 2.x)
 - [x] Apple Intelligence integration (AFM)
+- [x] Local LLM provider (Ollama, LM Studio, LocalAI, llama.cpp, etc.)
 - [x] Streaming support
 - [x] Structured output
 - [x] Vision model support (GPT, Claude, AFM)
 - [x] Tool calling capabilities
 
 ### Planned 🚧
-- [ ] Ollama (local) provider
 - [ ] Prompt caching support
 - [ ] Multi-modal inputs (images, audio)
 - [ ] Function/tool calling helpers

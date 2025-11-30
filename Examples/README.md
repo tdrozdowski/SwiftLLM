@@ -11,7 +11,11 @@ This directory contains practical examples demonstrating how to use SwiftLLM wit
    - OpenAI: https://platform.openai.com/api-keys
    - xAI: https://x.ai/api
 
-2. **macOS 26+ / iOS 26+** (for Apple Foundation Models examples only)
+2. **Local LLMs** (no API key needed):
+   - Ollama: https://ollama.ai (run `ollama serve` and `ollama pull llama3.2`)
+   - LM Studio: https://lmstudio.ai (download a model and start the server)
+
+3. **macOS 26+ / iOS 26+** (for Apple Foundation Models examples only)
 
 ### Basic Usage
 
@@ -22,6 +26,10 @@ The `BasicUsage.swift` file contains examples for all providers:
 try await anthropicBasicExample()
 try await openAIBasicExample()
 try await xAIBasicExample()
+
+// Local LLMs (no API key needed - just run Ollama/LM Studio)
+try await ollamaBasicExample()
+try await lmStudioExample()
 
 // On macOS 26+ / iOS 26+
 if #available(macOS 26.0, iOS 26.0, *) {
@@ -71,13 +79,35 @@ if #available(macOS 26.0, iOS 26.0, *) {
    - More powerful cloud model
    - Larger context window (32K)
 
+### Local LLMs (Ollama, LM Studio, etc.)
+
+9. **Ollama Basic** (`ollamaBasicExample`)
+   - Simple local model usage
+   - No API key required
+
+10. **Ollama Custom Model** (`ollamaCustomModelExample`)
+    - Full control with `LocalModelConfig`
+    - Custom context window, capabilities
+
+11. **LM Studio** (`lmStudioExample`)
+    - Streaming with LM Studio
+    - Default port 1234
+
+12. **OpenAI-Compatible Server** (`openAICompatibleServerExample`)
+    - Works with vLLM, text-generation-inference, FastChat
+    - Custom endpoints with optional API key
+
+13. **Local Structured Output** (`localLLMStructuredOutputExample`)
+    - Type-safe JSON responses from local models
+    - Code review example
+
 ### Utilities
 
-9. **Error Handling** (`errorHandlingExample`)
-   - Comprehensive error handling patterns
-   - All LLMError cases covered
+14. **Error Handling** (`errorHandlingExample`)
+    - Comprehensive error handling patterns
+    - All LLMError cases covered
 
-10. **Provider Comparison** (`providerComparisonExample`)
+15. **Provider Comparison** (`providerComparisonExample`)
     - Side-by-side provider testing
     - Performance and cost comparison
 
@@ -104,3 +134,4 @@ After trying these examples, explore:
 - Multi-turn conversations
 - Image/vision inputs (for supported providers)
 - Tool calling (advanced feature)
+- Running your own fine-tuned models with Ollama or LM Studio

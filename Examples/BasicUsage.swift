@@ -143,6 +143,140 @@ func xAIFastExample() async throws {
     print("\nResponse: \(response.text)")
 }
 
+// MARK: - Local LLM Examples (Ollama, LM Studio, etc.)
+
+func ollamaBasicExample() async throws {
+    print("\n=== Ollama Local LLM Example ===\n")
+
+    // Simple usage with just model name
+    let provider = LocalLLMProvider.ollama(model: "llama3.2")
+
+    print("Provider capabilities:")
+    print("  Local execution: \(provider.capabilities.supportsLocalExecution)")
+    print("  Cost: Free (runs locally)")
+
+    let response = try await provider.generateCompletion(
+        prompt: "Explain what makes Rust memory-safe",
+        systemPrompt: "You are a systems programming expert",
+        options: GenerationOptions(
+            temperature: 0.7,
+            maxTokens: 500
+        )
+    )
+
+    print("\nResponse: \(response.text)")
+    print("Model: \(response.model)")
+}
+
+func ollamaCustomModelExample() async throws {
+    print("\n=== Ollama Custom Model Configuration ===\n")
+
+    // Full control over model capabilities
+    let customModel = LocalModelConfig(
+        name: "deepseek-coder-v2:16b",
+        contextWindow: 128_000,
+        supportsVision: false,
+        supportsToolCalling: false,
+        supportsStructuredOutput: true
+    )
+
+    let provider = LocalLLMProvider.ollama(model: customModel)
+
+    print("Custom model config:")
+    print("  Name: \(customModel.name)")
+    print("  Context window: \(customModel.contextWindow)")
+    print("  Max context: \(provider.capabilities.maxContextTokens) tokens")
+
+    let response = try await provider.generateCompletion(
+        prompt: "Write a Swift function to parse JSON with error handling",
+        systemPrompt: "You are an expert Swift developer",
+        options: GenerationOptions(temperature: 0.3)
+    )
+
+    print("\nResponse: \(response.text)")
+}
+
+func lmStudioExample() async throws {
+    print("\n=== LM Studio Example ===\n")
+
+    // LM Studio runs on port 1234 by default
+    let provider = LocalLLMProvider.lmStudio(model: "mistral-7b-instruct")
+
+    let stream = provider.streamCompletion(
+        prompt: "Write a poem about coding at midnight",
+        systemPrompt: "You are a creative writer",
+        options: GenerationOptions(temperature: 0.9)
+    )
+
+    print("Streaming response: ")
+    for try await chunk in stream {
+        print(chunk, terminator: "")
+    }
+    print("\n")
+}
+
+func openAICompatibleServerExample() async throws {
+    print("\n=== Generic OpenAI-Compatible Server ===\n")
+
+    // Works with any server that implements the OpenAI API
+    // Examples: vLLM, text-generation-inference, FastChat, etc.
+    let provider = LocalLLMProvider.openAICompatible(
+        baseURL: "http://my-gpu-server:8000",
+        model: LocalModelConfig(
+            name: "my-fine-tuned-llama",
+            contextWindow: 32768,
+            supportsVision: false,
+            supportsToolCalling: true,
+            supportsStructuredOutput: true
+        ),
+        apiKey: "optional-api-key"
+    )
+
+    let response = try await provider.generateCompletion(
+        prompt: "Analyze this code for potential bugs",
+        systemPrompt: nil,
+        options: GenerationOptions()
+    )
+
+    print("Response: \(response.text)")
+}
+
+func localLLMStructuredOutputExample() async throws {
+    print("\n=== Local LLM Structured Output ===\n")
+
+    struct CodeReview: Codable {
+        let summary: String
+        let issues: [String]
+        let suggestions: [String]
+        let rating: Int
+    }
+
+    let provider = LocalLLMProvider.ollama(
+        model: LocalModelConfig(
+            name: "llama3.2",
+            contextWindow: 128_000,
+            supportsStructuredOutput: true
+        )
+    )
+
+    let review = try await provider.generateStructuredOutput(
+        prompt: """
+        Review this code:
+        func add(a: Int, b: Int) -> Int {
+            return a + b
+        }
+        """,
+        systemPrompt: "You are a code reviewer. Respond with JSON.",
+        schema: CodeReview.self,
+        options: GenerationOptions(temperature: 0.3)
+    )
+
+    print("Summary: \(review.summary)")
+    print("Issues: \(review.issues)")
+    print("Suggestions: \(review.suggestions)")
+    print("Rating: \(review.rating)/10")
+}
+
 // MARK: - Apple Foundation Models Examples
 
 @available(macOS 26.0, iOS 26.0, *)
@@ -309,6 +443,13 @@ struct BasicUsageExamples {
 
             // try await xAIBasicExample()
             // try await xAIFastExample()
+
+            // Local LLMs (Ollama, LM Studio, etc.):
+            // try await ollamaBasicExample()
+            // try await ollamaCustomModelExample()
+            // try await lmStudioExample()
+            // try await openAICompatibleServerExample()
+            // try await localLLMStructuredOutputExample()
 
             // On macOS 26+ / iOS 26+:
             // if #available(macOS 26.0, iOS 26.0, *) {
