@@ -211,7 +211,7 @@ public struct OpenAIProvider: LLMProvider {
         options: GenerationOptions = .default
     ) async throws -> CompletionResponse {
         let messages = try convertContextToMessages(context)
-        let tools = try convertTools(context.tools)
+        let tools = convertTools(context.tools)
         let toolChoiceValue = convertToolChoice(toolChoice)
 
         let request = OpenAIAPIClient.ChatCompletionRequest(
@@ -230,7 +230,39 @@ public struct OpenAIProvider: LLMProvider {
         )
 
         let response = try await client.createChatCompletion(request: request)
+        return try buildCompletionResponse(from: response)
+    }
 
+    public func continueWithToolResults(
+        context: ConversationContext,
+        options: GenerationOptions = .default
+    ) async throws -> CompletionResponse {
+        // Same as generateCompletionWithTools - context contains all messages including tool results
+        let messages = try convertContextToMessages(context)
+        let tools = convertTools(context.tools)
+
+        let request = OpenAIAPIClient.ChatCompletionRequest(
+            model: options.model ?? defaultModel,
+            messages: messages,
+            temperature: options.temperature,
+            max_tokens: options.maxTokens,
+            top_p: options.topP,
+            frequency_penalty: options.frequencyPenalty,
+            presence_penalty: options.presencePenalty,
+            stop: options.stopSequences,
+            stream: false,
+            response_format: nil,
+            tools: tools,
+            tool_choice: nil // Let model decide
+        )
+
+        let response = try await client.createChatCompletion(request: request)
+        return try buildCompletionResponse(from: response)
+    }
+
+    // MARK: - Helper Methods
+
+    private func buildCompletionResponse(from response: OpenAIAPIClient.ChatCompletionResponse) throws -> CompletionResponse {
         guard let choice = response.choices.first else {
             throw LLMError.decodingError("No choices in response")
         }
@@ -256,58 +288,6 @@ public struct OpenAIProvider: LLMProvider {
             toolCalls: toolCalls
         )
     }
-
-    public func continueWithToolResults(
-        context: ConversationContext,
-        options: GenerationOptions = .default
-    ) async throws -> CompletionResponse {
-        // Same as generateCompletionWithTools - context contains all messages including tool results
-        let messages = try convertContextToMessages(context)
-        let tools = try convertTools(context.tools)
-
-        let request = OpenAIAPIClient.ChatCompletionRequest(
-            model: options.model ?? defaultModel,
-            messages: messages,
-            temperature: options.temperature,
-            max_tokens: options.maxTokens,
-            top_p: options.topP,
-            frequency_penalty: options.frequencyPenalty,
-            presence_penalty: options.presencePenalty,
-            stop: options.stopSequences,
-            stream: false,
-            response_format: nil,
-            tools: tools,
-            tool_choice: nil // Let model decide
-        )
-
-        let response = try await client.createChatCompletion(request: request)
-
-        guard let choice = response.choices.first else {
-            throw LLMError.decodingError("No choices in response")
-        }
-
-        let toolCalls = choice.message.tool_calls?.map { openAICall in
-            ToolCall(
-                id: openAICall.id,
-                name: openAICall.function.name,
-                arguments: openAICall.function.arguments
-            )
-        } ?? []
-
-        return CompletionResponse(
-            text: choice.message.content ?? "",
-            model: response.model,
-            usage: TokenUsage(
-                inputTokens: response.usage.prompt_tokens,
-                outputTokens: response.usage.completion_tokens
-            ),
-            finishReason: choice.finish_reason,
-            metadata: ["id": response.id, "created": "\(response.created)"],
-            toolCalls: toolCalls
-        )
-    }
-
-    // MARK: - Helper Methods
 
     private func convertContextToMessages(_ context: ConversationContext) throws -> [OpenAIAPIClient.ChatCompletionRequest.Message] {
         var messages: [OpenAIAPIClient.ChatCompletionRequest.Message] = []
@@ -365,83 +345,75 @@ public struct OpenAIProvider: LLMProvider {
         return messages
     }
 
-    private func convertTools(_ tools: [Tool]) throws -> [OpenAIAPIClient.ChatCompletionRequest.OpenAITool] {
-        try tools.map { tool in
-            // Convert ToolParameters to a dictionary
-            let parametersDict = try convertToolParametersToDict(tool.parameters)
+    private func convertTools(_ tools: [Tool]) -> [OpenAIAPIClient.ChatCompletionRequest.OpenAITool] {
+        tools.map { tool in
+            // Convert ToolParameters to SendableValue
+            let parametersValue = convertToolParametersToValue(tool.parameters)
 
             return OpenAIAPIClient.ChatCompletionRequest.OpenAITool(
                 type: "function",
                 function: .init(
                     name: tool.name,
                     description: tool.description,
-                    parameters: OpenAIAPIClient.AnyCodable(parametersDict)
+                    parameters: OpenAIAPIClient.AnyCodable(parametersValue)
                 )
             )
         }
     }
 
-    private func convertToolParametersToDict(_ parameters: ToolParameters) throws -> [String: Any] {
-        var dict: [String: Any] = ["type": parameters.type]
+    private func convertToolParametersToValue(_ parameters: ToolParameters) -> OpenAIAPIClient.AnyCodable.SendableValue {
+        var dict: [String: OpenAIAPIClient.AnyCodable.SendableValue] = [
+            "type": .string(parameters.type)
+        ]
 
         // Convert properties
-        var propertiesDict: [String: Any] = [:]
+        var propertiesDict: [String: OpenAIAPIClient.AnyCodable.SendableValue] = [:]
         for (key, property) in parameters.properties {
-            propertiesDict[key] = try convertToolPropertyToDict(property)
+            propertiesDict[key] = convertToolPropertyToValue(property)
         }
-        dict["properties"] = propertiesDict
+        dict["properties"] = .dictionary(propertiesDict)
 
         // Add required if present
         if let required = parameters.required {
-            dict["required"] = required
+            dict["required"] = .array(required.map { .string($0) })
         }
 
-        return dict
+        return .dictionary(dict)
     }
 
-    private func convertToolPropertyToDict(_ property: ToolProperty) throws -> [String: Any] {
-        var dict: [String: Any] = ["type": property.type]
+    private func convertToolPropertyToValue(_ property: ToolProperty) -> OpenAIAPIClient.AnyCodable.SendableValue {
+        var dict: [String: OpenAIAPIClient.AnyCodable.SendableValue] = [
+            "type": .string(property.type)
+        ]
 
         if let description = property.description {
-            dict["description"] = description
+            dict["description"] = .string(description)
         }
 
         // Handle enum for string types
         if case .string(_, let enumValues) = property, let enumValues = enumValues {
-            dict["enum"] = enumValues
+            dict["enum"] = .array(enumValues.map { .string($0) })
         }
 
         // Handle array items
         if let items = property.items {
-            dict["items"] = try convertToolPropertyToDict(items)
+            dict["items"] = convertToolPropertyToValue(items)
         }
 
         // Handle object properties
         if let properties = property.properties {
-            var propertiesDict: [String: Any] = [:]
+            var propertiesDict: [String: OpenAIAPIClient.AnyCodable.SendableValue] = [:]
             for (key, prop) in properties {
-                propertiesDict[key] = try convertToolPropertyToDict(prop)
+                propertiesDict[key] = convertToolPropertyToValue(prop)
             }
-            dict["properties"] = propertiesDict
+            dict["properties"] = .dictionary(propertiesDict)
         }
 
-        return dict
+        return .dictionary(dict)
     }
 
-    private func convertToolChoice(_ choice: ToolChoice) -> OpenAIAPIClient.ChatCompletionRequest.ToolChoiceValue? {
-        switch choice {
-        case .auto:
-            return .string("auto")
-        case .none:
-            return .string("none")
-        case .required:
-            return .string("required")
-        case .specific(let name):
-            return .object([
-                "type": OpenAIAPIClient.AnyCodable("function"),
-                "function": OpenAIAPIClient.AnyCodable(["name": name])
-            ])
-        }
+    private func convertToolChoice(_ choice: ToolChoice) -> OpenAIToolChoice {
+        choice.toOpenAIFormat()
     }
 }
 

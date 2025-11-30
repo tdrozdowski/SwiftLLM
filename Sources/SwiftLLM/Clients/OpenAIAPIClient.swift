@@ -26,7 +26,7 @@ actor OpenAIAPIClient {
         var stream: Bool?
         let response_format: ResponseFormat?
         let tools: [OpenAITool]?
-        let tool_choice: ToolChoiceValue?
+        let tool_choice: OpenAIToolChoice?
 
         init(
             model: String,
@@ -40,7 +40,7 @@ actor OpenAIAPIClient {
             stream: Bool? = nil,
             response_format: ResponseFormat? = nil,
             tools: [OpenAITool]? = nil,
-            tool_choice: ToolChoiceValue? = nil
+            tool_choice: OpenAIToolChoice? = nil
         ) {
             self.model = model
             self.messages = messages
@@ -95,80 +95,82 @@ actor OpenAIAPIClient {
                 let arguments: String
             }
         }
-
-        // Type-erased Codable wrapper for tool_choice
-        enum ToolChoiceValue: Codable, Sendable {
-            case string(String)
-            case object([String: AnyCodable])
-
-            func encode(to encoder: Encoder) throws {
-                var container = encoder.singleValueContainer()
-                switch self {
-                case .string(let value):
-                    try container.encode(value)
-                case .object(let dict):
-                    try container.encode(dict)
-                }
-            }
-
-            init(from decoder: Decoder) throws {
-                let container = try decoder.singleValueContainer()
-                if let string = try? container.decode(String.self) {
-                    self = .string(string)
-                } else if let dict = try? container.decode([String: AnyCodable].self) {
-                    self = .object(dict)
-                } else {
-                    throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid tool_choice")
-                }
-            }
-        }
     }
 
-    // Type-erased Codable wrapper
-    struct AnyCodable: Codable, @unchecked Sendable {
-        let value: Any
+    // Type-safe Sendable wrapper for JSON values
+    struct AnyCodable: Codable, Sendable {
+        let value: SendableValue
 
-        init(_ value: Any) {
+        init(_ value: SendableValue) {
             self.value = value
+        }
+
+        enum SendableValue: Sendable {
+            case string(String)
+            case int(Int)
+            case double(Double)
+            case bool(Bool)
+            case array([SendableValue])
+            case dictionary([String: SendableValue])
+            case null
+
+            init(_ any: Any) throws {
+                if let string = any as? String {
+                    self = .string(string)
+                } else if let int = any as? Int {
+                    self = .int(int)
+                } else if let double = any as? Double {
+                    self = .double(double)
+                } else if let bool = any as? Bool {
+                    self = .bool(bool)
+                } else if let array = any as? [Any] {
+                    self = .array(try array.map { try SendableValue($0) })
+                } else if let dict = any as? [String: Any] {
+                    self = .dictionary(try dict.mapValues { try SendableValue($0) })
+                } else if any is NSNull {
+                    self = .null
+                } else {
+                    throw EncodingError.invalidValue(any, EncodingError.Context(codingPath: [], debugDescription: "Unsupported type"))
+                }
+            }
         }
 
         func encode(to encoder: Encoder) throws {
             var container = encoder.singleValueContainer()
-            if let string = value as? String {
+            switch value {
+            case .string(let string):
                 try container.encode(string)
-            } else if let int = value as? Int {
+            case .int(let int):
                 try container.encode(int)
-            } else if let double = value as? Double {
+            case .double(let double):
                 try container.encode(double)
-            } else if let bool = value as? Bool {
+            case .bool(let bool):
                 try container.encode(bool)
-            } else if let array = value as? [Any] {
+            case .array(let array):
                 try container.encode(array.map { AnyCodable($0) })
-            } else if let dict = value as? [String: Any] {
+            case .dictionary(let dict):
                 try container.encode(dict.mapValues { AnyCodable($0) })
-            } else if value is NSNull {
+            case .null:
                 try container.encodeNil()
-            } else {
-                throw EncodingError.invalidValue(value, EncodingError.Context(codingPath: encoder.codingPath, debugDescription: "Invalid type"))
             }
         }
 
         init(from decoder: Decoder) throws {
             let container = try decoder.singleValueContainer()
             if let string = try? container.decode(String.self) {
-                value = string
+                value = .string(string)
             } else if let int = try? container.decode(Int.self) {
-                value = int
+                value = .int(int)
             } else if let double = try? container.decode(Double.self) {
-                value = double
+                value = .double(double)
             } else if let bool = try? container.decode(Bool.self) {
-                value = bool
+                value = .bool(bool)
             } else if let array = try? container.decode([AnyCodable].self) {
-                value = array.map { $0.value }
+                value = .array(array.map { $0.value })
             } else if let dict = try? container.decode([String: AnyCodable].self) {
-                value = dict.mapValues { $0.value }
+                value = .dictionary(dict.mapValues { $0.value })
             } else if container.decodeNil() {
-                value = NSNull()
+                value = .null
             } else {
                 throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode value")
             }
@@ -238,12 +240,17 @@ actor OpenAIAPIClient {
     }
 
     nonisolated func streamChatCompletion(request: ChatCompletionRequest) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
+        // Capture actor-isolated properties before the Task to avoid data races
+        let capturedBaseURL = baseURL
+        let capturedAPIKey = apiKey
+        let capturedSession = session
+
+        return AsyncThrowingStream { continuation in
             Task { @Sendable in
                 do {
-                    var urlRequest = URLRequest(url: baseURL.appendingPathComponent("/v1/chat/completions"))
+                    var urlRequest = URLRequest(url: capturedBaseURL.appendingPathComponent("/v1/chat/completions"))
                     urlRequest.httpMethod = "POST"
-                    urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                    urlRequest.setValue("Bearer \(capturedAPIKey)", forHTTPHeaderField: "Authorization")
                     urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
                     var streamRequest = request
@@ -252,11 +259,37 @@ actor OpenAIAPIClient {
                     let encoder = JSONEncoder()
                     urlRequest.httpBody = try encoder.encode(streamRequest)
 
-                    let (bytes, response) = try await session.bytes(for: urlRequest)
+                    let (bytes, response) = try await capturedSession.bytes(for: urlRequest)
 
-                    guard let httpResponse = response as? HTTPURLResponse,
-                          httpResponse.statusCode == 200 else {
-                        throw LLMError.providerError("Stream request failed", code: nil)
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        throw LLMError.networkError(NSError(domain: "OpenAIAPI", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response type"]))
+                    }
+
+                    guard httpResponse.statusCode == 200 else {
+                        // Try to read error body for better error messages
+                        var errorMessage = "Stream request failed with status \(httpResponse.statusCode)"
+                        var errorData = Data()
+                        for try await byte in bytes {
+                            errorData.append(byte)
+                            // Limit error body size to prevent memory issues
+                            if errorData.count > 4096 { break }
+                        }
+                        if let errorBody = String(data: errorData, encoding: .utf8), !errorBody.isEmpty {
+                            errorMessage += ": \(errorBody)"
+                        }
+
+                        switch httpResponse.statusCode {
+                        case 401:
+                            throw LLMError.authenticationFailed(errorMessage)
+                        case 429:
+                            let retryAfter = httpResponse.value(forHTTPHeaderField: "Retry-After")
+                                .flatMap { TimeInterval($0) }
+                            throw LLMError.rateLimitExceeded(retryAfter: retryAfter)
+                        case 400:
+                            throw LLMError.invalidRequest(errorMessage)
+                        default:
+                            throw LLMError.providerError(errorMessage, code: "\(httpResponse.statusCode)")
+                        }
                     }
 
                     for try await line in bytes.lines {

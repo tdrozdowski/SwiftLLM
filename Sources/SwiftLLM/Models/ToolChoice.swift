@@ -76,7 +76,7 @@ public enum ToolChoice: Sendable, Equatable, Codable {
 }
 
 /// Type-safe OpenAI tool choice representation
-public enum OpenAIToolChoice: Encodable {
+public enum OpenAIToolChoice: Codable, Sendable {
     case string(String)  // "auto", "none", "required"
     case function(name: String)
 
@@ -92,11 +92,33 @@ public enum OpenAIToolChoice: Encodable {
         }
     }
 
+    public init(from decoder: Decoder) throws {
+        // Try to decode as a string first
+        if let container = try? decoder.singleValueContainer(),
+           let string = try? container.decode(String.self) {
+            self = .string(string)
+            return
+        }
+
+        // Otherwise decode as an object with type and function
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+        guard type == "function" else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .type,
+                in: container,
+                debugDescription: "Expected 'function' type"
+            )
+        }
+        let functionSpec = try container.decode(FunctionSpec.self, forKey: .function)
+        self = .function(name: functionSpec.name)
+    }
+
     private enum CodingKeys: String, CodingKey {
         case type, function
     }
 
-    private struct FunctionSpec: Encodable {
+    private struct FunctionSpec: Codable, Sendable {
         let name: String
     }
 }
