@@ -14,14 +14,39 @@ public struct XAIProvider: LLMProvider {
             supportsLocalExecution: false,
             supportsVision: false,
             supportsToolCalling: true,
-            maxContextTokens: 131_072, // Grok-2 context window
+            maxContextTokens: modelContextWindow,
             maxOutputTokens: 4096,
             supportsSystemPrompts: true,
-            pricing: LLMPricing(inputCostPer1M: 5.0, outputCostPer1M: 15.0) // Approximate pricing
+            pricing: modelPricing
         )
     }
 
-    public init(apiKey: String, model: String = "grok-2-latest") {
+    private var modelContextWindow: Int {
+        // Grok 4.1 Fast has 2M context window
+        if defaultModel.contains("grok-4-1-fast") {
+            return 2_000_000
+        } else if defaultModel.contains("grok-4") {
+            return 500_000 // Grok 4.1 standard models
+        } else if defaultModel.contains("grok-2") {
+            return 131_072
+        } else {
+            return 131_072
+        }
+    }
+
+    private var modelPricing: LLMPricing? {
+        // Grok 4.1 Fast pricing (as of November 2025)
+        if defaultModel.contains("grok-4-1-fast") {
+            return LLMPricing(inputCostPer1M: 0.20, outputCostPer1M: 0.50)
+        } else if defaultModel.contains("grok-4-1") {
+            return LLMPricing(inputCostPer1M: 2.0, outputCostPer1M: 10.0) // Estimated
+        } else if defaultModel.contains("grok-2") {
+            return LLMPricing(inputCostPer1M: 5.0, outputCostPer1M: 15.0)
+        }
+        return nil
+    }
+
+    public init(apiKey: String, model: String = "grok-4-1-fast-non-reasoning") {
         self.client = XAIAPIClient(apiKey: apiKey)
         self.defaultModel = model
         self.displayName = "xAI Grok"
@@ -129,12 +154,46 @@ public struct XAIProvider: LLMProvider {
 // MARK: - Convenience Initializers
 
 extension XAIProvider {
-    /// Create provider for Grok-2 (latest)
+    // MARK: Grok 4.1 Models (Latest - November 2025)
+
+    /// Create provider for Grok 4.1 Fast - Non-Reasoning (November 2025)
+    /// Best tool-calling model with 2M context window
+    /// Optimized for speed, accuracy, and enterprise applications
+    /// Ranks #2 on LMArena at 1465 Elo
+    public static func grok41FastNonReasoning(apiKey: String) -> XAIProvider {
+        XAIProvider(apiKey: apiKey, model: "grok-4-1-fast-non-reasoning")
+    }
+
+    /// Create provider for Grok 4.1 Fast - Reasoning (November 2025)
+    /// Advanced reasoning with 2M context window
+    /// Long-horizon reinforcement learning with multi-turn emphasis
+    public static func grok41FastReasoning(apiKey: String) -> XAIProvider {
+        XAIProvider(apiKey: apiKey, model: "grok-4-1-fast-reasoning")
+    }
+
+    /// Create provider for Grok 4.1 Thinking (November 2025)
+    /// Top-ranked model on LMArena with 1483 Elo (#1 overall)
+    /// Exceptional in creative, emotional, and collaborative interactions
+    /// 3x less likely to hallucinate than previous models
+    public static func grok41Thinking(apiKey: String) -> XAIProvider {
+        XAIProvider(apiKey: apiKey, model: "grok-4-1-thinking")
+    }
+
+    /// Create provider for Grok 4.1 (November 2025)
+    /// Immediate response with no thinking tokens
+    /// Ranks #2 on LMArena at 1465 Elo
+    public static func grok41(apiKey: String) -> XAIProvider {
+        XAIProvider(apiKey: apiKey, model: "grok-4-1")
+    }
+
+    // MARK: Grok 2 Models (Legacy)
+
+    /// Create provider for Grok-2 (Legacy)
     public static func grok2(apiKey: String) -> XAIProvider {
         XAIProvider(apiKey: apiKey, model: "grok-2-latest")
     }
 
-    /// Create provider for Grok-2 Mini
+    /// Create provider for Grok-2 Mini (Legacy)
     public static func grok2Mini(apiKey: String) -> XAIProvider {
         XAIProvider(apiKey: apiKey, model: "grok-2-mini-latest")
     }

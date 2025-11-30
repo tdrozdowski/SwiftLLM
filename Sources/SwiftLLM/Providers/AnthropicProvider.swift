@@ -22,13 +22,13 @@ public struct AnthropicProvider: LLMProvider {
     }
 
     private var modelSupportsVision: Bool {
-        defaultModel.contains("claude-3")
+        // Claude 3 and Claude 4 models support vision
+        defaultModel.contains("claude-3") || defaultModel.contains("claude-4")
     }
 
     private var modelContextWindow: Int {
-        if defaultModel.contains("claude-3-5") {
-            return 200_000
-        } else if defaultModel.contains("claude-3") {
+        // Claude 4.x models have 200K context window
+        if defaultModel.contains("claude-4") || defaultModel.contains("claude-3") {
             return 200_000
         } else {
             return 100_000
@@ -36,7 +36,8 @@ public struct AnthropicProvider: LLMProvider {
     }
 
     private var modelMaxOutput: Int {
-        if defaultModel.contains("claude-3-5") {
+        // Claude 4.5 models have 8K max output
+        if defaultModel.contains("claude-4") || defaultModel.contains("claude-3-5") {
             return 8192
         } else {
             return 4096
@@ -44,20 +45,30 @@ public struct AnthropicProvider: LLMProvider {
     }
 
     private var modelPricing: LLMPricing? {
-        // Claude 3.5 Sonnet pricing (as of 2024)
-        if defaultModel.contains("claude-3-5-sonnet") {
+        // Claude 4.5 pricing (as of November 2025)
+        if defaultModel.contains("opus-4-5") {
+            return LLMPricing(inputCostPer1M: 5.0, outputCostPer1M: 25.0)
+        } else if defaultModel.contains("sonnet-4-5") {
+            return LLMPricing(inputCostPer1M: 3.0, outputCostPer1M: 15.0)
+        } else if defaultModel.contains("haiku-4-5") {
+            return LLMPricing(inputCostPer1M: 1.0, outputCostPer1M: 5.0)
+        } else if defaultModel.contains("opus-4") {
+            return LLMPricing(inputCostPer1M: 5.0, outputCostPer1M: 25.0)
+        } else if defaultModel.contains("sonnet-4") {
+            return LLMPricing(inputCostPer1M: 3.0, outputCostPer1M: 15.0)
+        } else if defaultModel.contains("haiku-4") {
+            return LLMPricing(inputCostPer1M: 1.0, outputCostPer1M: 5.0)
+        } else if defaultModel.contains("claude-3-5-sonnet") {
             return LLMPricing(inputCostPer1M: 3.0, outputCostPer1M: 15.0)
         } else if defaultModel.contains("claude-3-opus") {
             return LLMPricing(inputCostPer1M: 15.0, outputCostPer1M: 75.0)
-        } else if defaultModel.contains("claude-3-sonnet") {
-            return LLMPricing(inputCostPer1M: 3.0, outputCostPer1M: 15.0)
         } else if defaultModel.contains("claude-3-haiku") {
             return LLMPricing(inputCostPer1M: 0.25, outputCostPer1M: 1.25)
         }
         return nil
     }
 
-    public init(apiKey: String, model: String = "claude-3-5-sonnet-20241022") {
+    public init(apiKey: String, model: String = "claude-opus-4-5-20251124") {
         self.client = AnthropicAPIClient(apiKey: apiKey)
         self.defaultModel = model
         self.displayName = "Anthropic Claude"
@@ -157,18 +168,58 @@ public struct AnthropicProvider: LLMProvider {
 // MARK: - Convenience Initializers
 
 extension AnthropicProvider {
-    /// Create provider for Claude 3.5 Sonnet
-    public static func sonnet(apiKey: String) -> AnthropicProvider {
+    // MARK: Claude 4.5 Models (Latest - November 2025)
+
+    /// Create provider for Claude Opus 4.5 (Latest flagship model - November 2025)
+    /// Most intelligent model, best for coding, agents, and computer use
+    public static func opus45(apiKey: String) -> AnthropicProvider {
+        AnthropicProvider(apiKey: apiKey, model: "claude-opus-4-5-20251124")
+    }
+
+    /// Create provider for Claude Sonnet 4.5 (September 2025)
+    /// Best coding model with substantial gains in reasoning and math
+    public static func sonnet45(apiKey: String) -> AnthropicProvider {
+        AnthropicProvider(apiKey: apiKey, model: "claude-sonnet-4-5-20250929")
+    }
+
+    /// Create provider for Claude Haiku 4.5 (October 2025)
+    /// Small, fast model optimized for low latency and cost
+    public static func haiku45(apiKey: String) -> AnthropicProvider {
+        AnthropicProvider(apiKey: apiKey, model: "claude-haiku-4-5-20251015")
+    }
+
+    // MARK: Claude 4.x Models
+
+    /// Create provider for Claude Opus 4.1 (August 2025)
+    /// Focused on agentic tasks, real-world coding, and reasoning
+    public static func opus41(apiKey: String) -> AnthropicProvider {
+        AnthropicProvider(apiKey: apiKey, model: "claude-opus-4-1-20250805")
+    }
+
+    /// Create provider for Claude Sonnet 4 (May 2025)
+    public static func sonnet4(apiKey: String) -> AnthropicProvider {
+        AnthropicProvider(apiKey: apiKey, model: "claude-sonnet-4-20250522")
+    }
+
+    /// Create provider for Claude Opus 4 (May 2025)
+    public static func opus4(apiKey: String) -> AnthropicProvider {
+        AnthropicProvider(apiKey: apiKey, model: "claude-opus-4-20250522")
+    }
+
+    // MARK: Claude 3.x Models (Legacy)
+
+    /// Create provider for Claude 3.5 Sonnet (Legacy)
+    public static func sonnet35(apiKey: String) -> AnthropicProvider {
         AnthropicProvider(apiKey: apiKey, model: "claude-3-5-sonnet-20241022")
     }
 
-    /// Create provider for Claude 3 Opus
-    public static func opus(apiKey: String) -> AnthropicProvider {
+    /// Create provider for Claude 3 Opus (Legacy)
+    public static func opus3(apiKey: String) -> AnthropicProvider {
         AnthropicProvider(apiKey: apiKey, model: "claude-3-opus-20240229")
     }
 
-    /// Create provider for Claude 3 Haiku
-    public static func haiku(apiKey: String) -> AnthropicProvider {
+    /// Create provider for Claude 3 Haiku (Legacy)
+    public static func haiku3(apiKey: String) -> AnthropicProvider {
         AnthropicProvider(apiKey: apiKey, model: "claude-3-haiku-20240307")
     }
 }

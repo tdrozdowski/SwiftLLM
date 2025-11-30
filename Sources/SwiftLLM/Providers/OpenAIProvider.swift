@@ -22,17 +22,22 @@ public struct OpenAIProvider: LLMProvider {
     }
 
     private var modelSupportsStructuredOutput: Bool {
-        defaultModel.contains("gpt-4") || defaultModel.contains("gpt-3.5-turbo")
+        // GPT-5 and GPT-4 models support structured output
+        defaultModel.contains("gpt-5") || defaultModel.contains("gpt-4") || defaultModel.contains("gpt-3.5-turbo")
     }
 
     private var modelSupportsVision: Bool {
-        defaultModel.contains("gpt-4-vision") || defaultModel.contains("gpt-4o")
+        // GPT-5 and GPT-4o models support vision
+        defaultModel.contains("gpt-5") || defaultModel.contains("gpt-4-vision") || defaultModel.contains("gpt-4o")
     }
 
     private var modelContextWindow: Int {
-        if defaultModel.contains("gpt-4o") {
-            return 128_000
-        } else if defaultModel.contains("gpt-4-turbo") {
+        // GPT-5.1-Codex-Max can work over millions of tokens through compaction
+        if defaultModel.contains("gpt-5-1-codex-max") {
+            return 1_000_000 // Can handle millions through compaction
+        } else if defaultModel.contains("gpt-5") {
+            return 200_000
+        } else if defaultModel.contains("gpt-4o") || defaultModel.contains("gpt-4-turbo") {
             return 128_000
         } else if defaultModel.contains("gpt-4") {
             return 8192
@@ -44,7 +49,7 @@ public struct OpenAIProvider: LLMProvider {
     }
 
     private var modelMaxOutput: Int {
-        if defaultModel.contains("gpt-4o") {
+        if defaultModel.contains("gpt-5") || defaultModel.contains("gpt-4o") {
             return 16_384
         } else if defaultModel.contains("gpt-4-turbo") {
             return 4096
@@ -54,8 +59,16 @@ public struct OpenAIProvider: LLMProvider {
     }
 
     private var modelPricing: LLMPricing? {
-        // GPT-4o pricing (as of 2024)
-        if defaultModel.contains("gpt-4o") {
+        // GPT-5.1 pricing (as of November 2025) - estimated based on GPT-4o
+        if defaultModel.contains("gpt-5-1-codex-max") {
+            return LLMPricing(inputCostPer1M: 10.0, outputCostPer1M: 30.0)
+        } else if defaultModel.contains("gpt-5-1-codex") {
+            return LLMPricing(inputCostPer1M: 7.0, outputCostPer1M: 20.0)
+        } else if defaultModel.contains("gpt-5-1") {
+            return LLMPricing(inputCostPer1M: 5.0, outputCostPer1M: 15.0)
+        } else if defaultModel.contains("gpt-5") {
+            return LLMPricing(inputCostPer1M: 5.0, outputCostPer1M: 15.0)
+        } else if defaultModel.contains("gpt-4o") {
             return LLMPricing(inputCostPer1M: 5.0, outputCostPer1M: 15.0)
         } else if defaultModel.contains("gpt-4-turbo") {
             return LLMPricing(inputCostPer1M: 10.0, outputCostPer1M: 30.0)
@@ -67,7 +80,7 @@ public struct OpenAIProvider: LLMProvider {
         return nil
     }
 
-    public init(apiKey: String, model: String = "gpt-4o") {
+    public init(apiKey: String, model: String = "gpt-5-1-instant") {
         self.client = OpenAIAPIClient(apiKey: apiKey)
         self.defaultModel = model
         self.displayName = "OpenAI GPT"
@@ -194,17 +207,62 @@ public struct OpenAIProvider: LLMProvider {
 // MARK: - Convenience Initializers
 
 extension OpenAIProvider {
-    /// Create provider for GPT-4o
+    // MARK: GPT-5.1 Models (Latest - November 2025)
+
+    /// Create provider for GPT-5.1-Codex-Max (November 2025)
+    /// Frontier agentic coding model built for long-running, detailed work
+    /// First model natively trained to operate across multiple context windows (millions of tokens)
+    public static func gpt51CodexMax(apiKey: String) -> OpenAIProvider {
+        OpenAIProvider(apiKey: apiKey, model: "gpt-5-1-codex-max")
+    }
+
+    /// Create provider for GPT-5.1-Codex
+    /// Optimized for coding tasks with enhanced tool-calling
+    public static func gpt51Codex(apiKey: String) -> OpenAIProvider {
+        OpenAIProvider(apiKey: apiKey, model: "gpt-5-1-codex")
+    }
+
+    /// Create provider for GPT-5.1-Codex-Mini
+    /// Smaller, faster coding model
+    public static func gpt51CodexMini(apiKey: String) -> OpenAIProvider {
+        OpenAIProvider(apiKey: apiKey, model: "gpt-5-1-codex-mini")
+    }
+
+    /// Create provider for GPT-5.1 Instant (November 2025)
+    /// Most-used model - warmer, more intelligent, better at following instructions
+    /// Adaptive reasoning with "no reasoning" mode for faster responses
+    public static func gpt51Instant(apiKey: String) -> OpenAIProvider {
+        OpenAIProvider(apiKey: apiKey, model: "gpt-5-1-instant")
+    }
+
+    /// Create provider for GPT-5.1 Thinking (November 2025)
+    /// Advanced reasoning model, easier to understand and faster on simple tasks
+    /// More persistent on complex problems
+    public static func gpt51Thinking(apiKey: String) -> OpenAIProvider {
+        OpenAIProvider(apiKey: apiKey, model: "gpt-5-1-thinking")
+    }
+
+    // MARK: GPT-5 Models (August 2025)
+
+    /// Create provider for GPT-5 (August 2025)
+    /// Major frontier model update with state-of-the-art performance
+    public static func gpt5(apiKey: String) -> OpenAIProvider {
+        OpenAIProvider(apiKey: apiKey, model: "gpt-5")
+    }
+
+    // MARK: GPT-4 Models (Legacy)
+
+    /// Create provider for GPT-4o (Legacy)
     public static func gpt4o(apiKey: String) -> OpenAIProvider {
         OpenAIProvider(apiKey: apiKey, model: "gpt-4o")
     }
 
-    /// Create provider for GPT-4 Turbo
+    /// Create provider for GPT-4 Turbo (Legacy)
     public static func gpt4Turbo(apiKey: String) -> OpenAIProvider {
         OpenAIProvider(apiKey: apiKey, model: "gpt-4-turbo")
     }
 
-    /// Create provider for GPT-3.5 Turbo
+    /// Create provider for GPT-3.5 Turbo (Legacy)
     public static func gpt35Turbo(apiKey: String) -> OpenAIProvider {
         OpenAIProvider(apiKey: apiKey, model: "gpt-3.5-turbo")
     }
