@@ -390,7 +390,6 @@ See the [Examples](Examples/) directory for:
 - [x] Streaming support
 - [x] Structured output
 - [x] Vision model support (GPT, Claude, AFM)
-- [x] Tool calling capabilities
 - [x] Usage analytics and cost tracking
 - [x] Provider factory/registry pattern
 - [x] Performance benchmarks
