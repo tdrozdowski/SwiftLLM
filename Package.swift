@@ -21,6 +21,10 @@ let package = Package(
         .testTarget(
             name: "SwiftLLMTests",
             dependencies: ["SwiftLLM"]
+        ),
+        .testTarget(
+            name: "SwiftLLMBenchmarks",
+            dependencies: ["SwiftLLM"]
         )
     ]
 )

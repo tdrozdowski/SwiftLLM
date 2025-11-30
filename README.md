@@ -391,15 +391,15 @@ See the [Examples](Examples/) directory for:
 - [x] Structured output
 - [x] Vision model support (GPT, Claude, AFM)
 - [x] Tool calling capabilities
+- [x] Usage analytics and cost tracking
+- [x] Provider factory/registry pattern
+- [x] Performance benchmarks
 
 ### Planned 🚧
 - [ ] Prompt caching support
 - [ ] Multi-modal inputs (images, audio)
 - [ ] Function/tool calling helpers
-- [ ] Usage analytics and cost tracking
-- [ ] Provider factory pattern
 - [ ] SwiftUI integration helpers
-- [ ] Performance benchmarks
 
 ## Testing
 
