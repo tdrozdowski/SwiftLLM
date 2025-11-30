@@ -14,7 +14,7 @@ actor OpenAIAPIClient {
 
     // MARK: - Chat Completions API
 
-    struct ChatCompletionRequest: Codable {
+    struct ChatCompletionRequest: Codable, Sendable {
         let model: String
         let messages: [Message]
         let temperature: Double?
@@ -25,14 +25,153 @@ actor OpenAIAPIClient {
         let stop: [String]?
         var stream: Bool?
         let response_format: ResponseFormat?
+        let tools: [OpenAITool]?
+        let tool_choice: ToolChoiceValue?
 
-        struct Message: Codable {
-            let role: String
-            let content: String
+        init(
+            model: String,
+            messages: [Message],
+            temperature: Double? = nil,
+            max_tokens: Int? = nil,
+            top_p: Double? = nil,
+            frequency_penalty: Double? = nil,
+            presence_penalty: Double? = nil,
+            stop: [String]? = nil,
+            stream: Bool? = nil,
+            response_format: ResponseFormat? = nil,
+            tools: [OpenAITool]? = nil,
+            tool_choice: ToolChoiceValue? = nil
+        ) {
+            self.model = model
+            self.messages = messages
+            self.temperature = temperature
+            self.max_tokens = max_tokens
+            self.top_p = top_p
+            self.frequency_penalty = frequency_penalty
+            self.presence_penalty = presence_penalty
+            self.stop = stop
+            self.stream = stream
+            self.response_format = response_format
+            self.tools = tools
+            self.tool_choice = tool_choice
         }
 
-        struct ResponseFormat: Codable {
+        struct Message: Codable, Sendable {
+            let role: String
+            let content: String?
+            let tool_calls: [OpenAIToolCall]?
+            let tool_call_id: String?
+
+            init(role: String, content: String?, tool_calls: [OpenAIToolCall]? = nil, tool_call_id: String? = nil) {
+                self.role = role
+                self.content = content
+                self.tool_calls = tool_calls
+                self.tool_call_id = tool_call_id
+            }
+        }
+
+        struct ResponseFormat: Codable, Sendable {
             let type: String // "text" or "json_object"
+        }
+
+        struct OpenAITool: Codable, Sendable {
+            let type: String // Always "function"
+            let function: Function
+
+            struct Function: Codable, Sendable {
+                let name: String
+                let description: String
+                let parameters: AnyCodable
+            }
+        }
+
+        struct OpenAIToolCall: Codable, Sendable {
+            let id: String
+            let type: String // Always "function"
+            let function: FunctionCall
+
+            struct FunctionCall: Codable, Sendable {
+                let name: String
+                let arguments: String
+            }
+        }
+
+        // Type-erased Codable wrapper for tool_choice
+        enum ToolChoiceValue: Codable, Sendable {
+            case string(String)
+            case object([String: AnyCodable])
+
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.singleValueContainer()
+                switch self {
+                case .string(let value):
+                    try container.encode(value)
+                case .object(let dict):
+                    try container.encode(dict)
+                }
+            }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.singleValueContainer()
+                if let string = try? container.decode(String.self) {
+                    self = .string(string)
+                } else if let dict = try? container.decode([String: AnyCodable].self) {
+                    self = .object(dict)
+                } else {
+                    throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid tool_choice")
+                }
+            }
+        }
+    }
+
+    // Type-erased Codable wrapper
+    struct AnyCodable: Codable, @unchecked Sendable {
+        let value: Any
+
+        init(_ value: Any) {
+            self.value = value
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            if let string = value as? String {
+                try container.encode(string)
+            } else if let int = value as? Int {
+                try container.encode(int)
+            } else if let double = value as? Double {
+                try container.encode(double)
+            } else if let bool = value as? Bool {
+                try container.encode(bool)
+            } else if let array = value as? [Any] {
+                try container.encode(array.map { AnyCodable($0) })
+            } else if let dict = value as? [String: Any] {
+                try container.encode(dict.mapValues { AnyCodable($0) })
+            } else if value is NSNull {
+                try container.encodeNil()
+            } else {
+                throw EncodingError.invalidValue(value, EncodingError.Context(codingPath: encoder.codingPath, debugDescription: "Invalid type"))
+            }
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if let string = try? container.decode(String.self) {
+                value = string
+            } else if let int = try? container.decode(Int.self) {
+                value = int
+            } else if let double = try? container.decode(Double.self) {
+                value = double
+            } else if let bool = try? container.decode(Bool.self) {
+                value = bool
+            } else if let array = try? container.decode([AnyCodable].self) {
+                value = array.map { $0.value }
+            } else if let dict = try? container.decode([String: AnyCodable].self) {
+                value = dict.mapValues { $0.value }
+            } else if container.decodeNil() {
+                value = NSNull()
+            } else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode value")
+            }
         }
     }
 
@@ -52,6 +191,7 @@ actor OpenAIAPIClient {
             struct Message: Codable {
                 let role: String
                 let content: String?
+                let tool_calls: [ChatCompletionRequest.OpenAIToolCall]?
             }
         }
 
@@ -99,7 +239,7 @@ actor OpenAIAPIClient {
 
     nonisolated func streamChatCompletion(request: ChatCompletionRequest) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            Task { @Sendable in
                 do {
                     var urlRequest = URLRequest(url: baseURL.appendingPathComponent("/v1/chat/completions"))
                     urlRequest.httpMethod = "POST"
