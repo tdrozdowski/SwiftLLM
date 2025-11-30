@@ -53,4 +53,54 @@ public protocol LLMProvider: Sendable {
     /// - Parameter text: The text to count tokens for
     /// - Returns: Estimated token count
     func estimateTokens(_ text: String) async throws -> Int
+
+    /// Generate completion with tool support
+    /// - Parameters:
+    ///   - context: Conversation context with tools and messages
+    ///   - toolChoice: How the model should choose tools
+    ///   - options: Generation configuration
+    /// - Returns: Completion response with potential tool calls
+    /// - Note: Default implementation throws `.unsupportedFeature` if not overridden
+    func generateCompletionWithTools(
+        context: ConversationContext,
+        toolChoice: ToolChoice,
+        options: GenerationOptions
+    ) async throws -> CompletionResponse
+
+    /// Continue conversation after tool execution
+    /// - Parameters:
+    ///   - context: Conversation context with tool results
+    ///   - options: Generation configuration
+    /// - Returns: Completion response
+    /// - Note: Default implementation throws `.unsupportedFeature` if not overridden
+    func continueWithToolResults(
+        context: ConversationContext,
+        options: GenerationOptions
+    ) async throws -> CompletionResponse
+}
+
+// MARK: - Default Implementations
+
+public extension LLMProvider {
+    func generateCompletionWithTools(
+        context: ConversationContext,
+        toolChoice: ToolChoice = .auto,
+        options: GenerationOptions = .default
+    ) async throws -> CompletionResponse {
+        guard capabilities.supportsToolCalling else {
+            throw LLMError.unsupportedFeature("Tool calling is not supported by \(displayName)")
+        }
+        // Default implementation for providers that haven't implemented tool support yet
+        throw LLMError.unsupportedFeature("Tool calling not yet implemented for \(displayName)")
+    }
+
+    func continueWithToolResults(
+        context: ConversationContext,
+        options: GenerationOptions = .default
+    ) async throws -> CompletionResponse {
+        guard capabilities.supportsToolCalling else {
+            throw LLMError.unsupportedFeature("Tool calling is not supported by \(displayName)")
+        }
+        throw LLMError.unsupportedFeature("Tool calling not yet implemented for \(displayName)")
+    }
 }
