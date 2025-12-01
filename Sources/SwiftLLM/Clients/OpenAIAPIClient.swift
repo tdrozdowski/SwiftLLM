@@ -1,4 +1,5 @@
 import Foundation
+import os.log
 
 /// API client for OpenAI's GPT models
 actor OpenAIAPIClient {

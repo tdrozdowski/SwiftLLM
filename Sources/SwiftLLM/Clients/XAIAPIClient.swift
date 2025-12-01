@@ -1,4 +1,5 @@
 import Foundation
+import os.log
 
 /// API client for xAI's Grok models
 /// Note: xAI uses OpenAI-compatible API

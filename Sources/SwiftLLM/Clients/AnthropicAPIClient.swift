@@ -1,4 +1,5 @@
 import Foundation
+import os.log
 
 /// API client for Anthropic's Claude models
 actor AnthropicAPIClient {
