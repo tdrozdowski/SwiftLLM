@@ -58,25 +58,25 @@ extension Logger {
 
     /// Log an error with context
     func logError(_ error: Error, context: String) {
-        self.error("❌ \(context): \(error.localizedDescription)")
+        self.error("❌ \(context, privacy: .public): \(error.localizedDescription, privacy: .public)")
     }
 
     /// Log a tool call
     func logToolCall(name: String, id: String) {
-        self.info("🔧 Tool call: \(name) (id: \(id))")
+        self.info("🔧 Tool call: \(name, privacy: .public) (id: \(id, privacy: .public))")
     }
 
     /// Log tool arguments
     func logToolArguments(_ arguments: String) {
-        self.debug("  Arguments: \(arguments)")
+        self.debug("  Arguments: \(arguments, privacy: .public)")
     }
 
     /// Log tool result
     func logToolResult(success: Bool, id: String) {
         if success {
-            self.info("✅ Tool result: \(id)")
+            self.info("✅ Tool result: \(id, privacy: .public)")
         } else {
-            self.error("❌ Tool error: \(id)")
+            self.error("❌ Tool error: \(id, privacy: .public)")
         }
     }
 }
