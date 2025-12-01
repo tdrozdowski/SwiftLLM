@@ -57,9 +57,31 @@ actor AnthropicAPIClient {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
         urlRequest.httpBody = try encoder.encode(request)
 
+        // Log request
+        SwiftLLMLogger.api.logRequest(
+            url: urlRequest.url?.absoluteString ?? "unknown",
+            method: "POST",
+            headers: urlRequest.allHTTPHeaderFields
+        )
+        if let body = urlRequest.httpBody, let bodyString = String(data: body, encoding: .utf8) {
+            SwiftLLMLogger.api.logRequestBody(bodyString)
+        }
+
         let (data, response) = try await session.data(for: urlRequest)
+
+        // Log response
+        if let httpResponse = response as? HTTPURLResponse {
+            SwiftLLMLogger.api.logResponse(
+                statusCode: httpResponse.statusCode,
+                url: urlRequest.url?.absoluteString
+            )
+        }
+        if let responseString = String(data: data, encoding: .utf8) {
+            SwiftLLMLogger.api.logResponseBody(responseString)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LLMError.networkError(NSError(domain: "AnthropicAPI", code: -1, userInfo: nil))
@@ -86,12 +108,17 @@ actor AnthropicAPIClient {
     }
 
     nonisolated func streamMessage(request: MessagesRequest) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
+        // Capture actor-isolated properties before the Task to avoid data races
+        let capturedBaseURL = baseURL
+        let capturedAPIKey = apiKey
+        let capturedSession = session
+
+        return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    var urlRequest = URLRequest(url: baseURL.appendingPathComponent("/v1/messages"))
+                    var urlRequest = URLRequest(url: capturedBaseURL.appendingPathComponent("/v1/messages"))
                     urlRequest.httpMethod = "POST"
-                    urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+                    urlRequest.setValue(capturedAPIKey, forHTTPHeaderField: "x-api-key")
                     urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
                     urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -99,9 +126,28 @@ actor AnthropicAPIClient {
                     streamRequest.stream = true
 
                     let encoder = JSONEncoder()
+                    encoder.outputFormatting = .prettyPrinted
                     urlRequest.httpBody = try encoder.encode(streamRequest)
 
-                    let (bytes, response) = try await session.bytes(for: urlRequest)
+                    // Log request
+                    SwiftLLMLogger.api.logRequest(
+                        url: urlRequest.url?.absoluteString ?? "unknown",
+                        method: "POST",
+                        headers: urlRequest.allHTTPHeaderFields
+                    )
+                    if let body = urlRequest.httpBody, let bodyString = String(data: body, encoding: .utf8) {
+                        SwiftLLMLogger.api.logRequestBody(bodyString)
+                    }
+
+                    let (bytes, response) = try await capturedSession.bytes(for: urlRequest)
+
+                    // Log response
+                    if let httpResponse = response as? HTTPURLResponse {
+                        SwiftLLMLogger.api.logResponse(
+                            statusCode: httpResponse.statusCode,
+                            url: urlRequest.url?.absoluteString
+                        )
+                    }
 
                     guard let httpResponse = response as? HTTPURLResponse,
                           httpResponse.statusCode == 200 else {

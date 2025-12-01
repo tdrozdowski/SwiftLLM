@@ -210,6 +210,9 @@ public struct OpenAIProvider: LLMProvider {
         toolChoice: ToolChoice = .auto,
         options: GenerationOptions = .default
     ) async throws -> CompletionResponse {
+        SwiftLLMLogger.provider.info("Generating completion with \(context.tools.count) tools available")
+        SwiftLLMLogger.provider.debug("Tool choice: \(String(describing: toolChoice))")
+
         let messages = try convertContextToMessages(context)
         let tools = convertTools(context.tools)
         let toolChoiceValue = convertToolChoice(toolChoice)

@@ -211,9 +211,31 @@ actor OpenAIAPIClient {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
         urlRequest.httpBody = try encoder.encode(request)
 
+        // Log request
+        SwiftLLMLogger.api.logRequest(
+            url: urlRequest.url?.absoluteString ?? "unknown",
+            method: "POST",
+            headers: urlRequest.allHTTPHeaderFields
+        )
+        if let body = urlRequest.httpBody, let bodyString = String(data: body, encoding: .utf8) {
+            SwiftLLMLogger.api.logRequestBody(bodyString)
+        }
+
         let (data, response) = try await session.data(for: urlRequest)
+
+        // Log response
+        if let httpResponse = response as? HTTPURLResponse {
+            SwiftLLMLogger.api.logResponse(
+                statusCode: httpResponse.statusCode,
+                url: urlRequest.url?.absoluteString
+            )
+        }
+        if let responseString = String(data: data, encoding: .utf8) {
+            SwiftLLMLogger.api.logResponseBody(responseString)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LLMError.networkError(NSError(domain: "OpenAIAPI", code: -1, userInfo: nil))

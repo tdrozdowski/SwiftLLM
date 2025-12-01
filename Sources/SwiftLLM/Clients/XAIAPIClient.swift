@@ -22,10 +22,15 @@ actor XAIAPIClient {
         let max_tokens: Int?
         let top_p: Double?
         var stream: Bool?
+        let response_format: ResponseFormat?
 
         struct Message: Codable {
             let role: String
             let content: String
+        }
+
+        struct ResponseFormat: Codable {
+            let type: String // "text" or "json_object"
         }
     }
 
@@ -60,11 +65,34 @@ actor XAIAPIClient {
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
         urlRequest.httpBody = try encoder.encode(request)
 
+        // Log request
+        SwiftLLMLogger.api.logRequest(
+            url: urlRequest.url?.absoluteString ?? "unknown",
+            method: "POST",
+            headers: urlRequest.allHTTPHeaderFields
+        )
+        if let body = urlRequest.httpBody, let bodyString = String(data: body, encoding: .utf8) {
+            SwiftLLMLogger.api.logRequestBody(bodyString)
+        }
+
         let (data, response) = try await session.data(for: urlRequest)
+
+        // Log response
+        if let httpResponse = response as? HTTPURLResponse {
+            SwiftLLMLogger.api.logResponse(
+                statusCode: httpResponse.statusCode,
+                url: urlRequest.url?.absoluteString
+            )
+        }
+        if let responseString = String(data: data, encoding: .utf8) {
+            SwiftLLMLogger.api.logResponseBody(responseString)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LLMError.networkError(NSError(domain: "xAIAPI", code: -1, userInfo: nil))
@@ -98,6 +126,7 @@ actor XAIAPIClient {
                     urlRequest.httpMethod = "POST"
                     urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
                     urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
 
                     var streamRequest = request
                     streamRequest.stream = true
