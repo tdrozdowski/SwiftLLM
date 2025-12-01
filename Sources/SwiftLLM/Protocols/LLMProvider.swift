@@ -104,3 +104,40 @@ public extension LLMProvider {
         throw LLMError.unsupportedFeature("Tool calling not yet implemented for \(displayName)")
     }
 }
+
+// MARK: - Apple Foundation Models Extensions
+
+#if canImport(FoundationModels)
+import FoundationModels
+
+@available(macOS 26.0, iOS 26.0, *)
+public extension LLMProvider {
+    /// Generate a response with native Apple @Generable type
+    ///
+    /// This method is only available for providers that support Apple's @Generable macro
+    /// (currently only AppleIntelligenceProvider). For other providers, this will throw
+    /// `.unsupportedFeature`.
+    ///
+    /// - Parameters:
+    ///   - prompt: The user's prompt
+    ///   - systemPrompt: Optional system instructions
+    ///   - responseType: The @Generable type to generate
+    ///   - options: Generation options (temperature, max tokens, etc.)
+    /// - Returns: The generated response as the specified @Generable type
+    /// - Throws: LLMError.unsupportedFeature for non-AFM providers, or generation errors
+    ///
+    /// - Note: Default implementation throws `.unsupportedFeature`. Only AppleIntelligenceProvider
+    ///         implements this method.
+    func generateGenerable<T: Generable>(
+        prompt: String,
+        systemPrompt: String?,
+        responseType: T.Type,
+        options: GenerationOptions = .default
+    ) async throws -> T {
+        throw LLMError.unsupportedFeature(
+            "Native @Generable support is only available with Apple Intelligence (AppleIntelligenceProvider). " +
+            "Use generateStructuredOutput<T: Codable> instead for \(displayName)."
+        )
+    }
+}
+#endif

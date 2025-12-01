@@ -14,6 +14,7 @@ SwiftLLM provides a unified interface for working with the latest LLM providers,
 
 - 🔌 **Multi-Provider Support**: Anthropic Claude, OpenAI GPT, xAI Grok, Apple Intelligence
 - 🎯 **Type-Safe**: Leverage Swift's type system for structured outputs
+- 🍎 **Native @Generable**: First-class support for Apple's @Generable macro (AFM)
 - ⚡ **Modern Concurrency**: Built with async/await and actors throughout
 - 🌊 **Streaming Support**: Real-time token-by-token responses
 - 🔍 **Capability Detection**: Query what each provider supports
@@ -142,6 +143,47 @@ let response = try await onDevice.generateCompletion(
     options: GenerationOptions(temperature: 0.7)
 )
 ```
+
+#### Native @Generable Support (Recommended for AFM)
+
+Apple Foundation Models support native structured output via the `@Generable` macro, which is more reliable than JSON prompting:
+
+```swift
+import FoundationModels
+
+@Generable
+struct CodeSummary {
+    @Guide(description: "One-line summary of the code")
+    var brief: String
+
+    @Guide(description: "Key implementation details")
+    var keyPoints: [String]
+
+    @Guide(description: "Potential improvements")
+    var suggestions: [String]
+}
+
+let provider = AppleIntelligenceProvider.onDevice()
+let summary = try await provider.generateGenerable(
+    prompt: "Analyze this Swift code: \(code)",
+    systemPrompt: "You are a code reviewer",
+    responseType: CodeSummary.self,
+    options: .default
+)
+
+print(summary.brief)
+for point in summary.keyPoints {
+    print("• \(point)")
+}
+```
+
+**Why use `@Generable` instead of `generateStructuredOutput`?**
+- ✅ Uses AFM's native guided generation (no JSON parsing)
+- ✅ No markdown wrapping issues
+- ✅ Type-safe at compile time
+- ✅ More reliable output conformance
+
+See `Examples/GenerableExample.swift` for complete examples.
 
 ### Local LLMs (Ollama, LM Studio, etc.)
 

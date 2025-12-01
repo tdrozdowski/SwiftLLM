@@ -164,6 +164,91 @@ public struct AppleIntelligenceProvider: LLMProvider {
         }
     }
 
+    /// Generate a response with native Apple @Generable type (recommended for AFM)
+    ///
+    /// This method uses Apple's native guided generation to constrain the model's output
+    /// to match the schema of a @Generable type. This is more reliable than JSON prompting
+    /// and returns native Swift objects without any parsing.
+    ///
+    /// - Parameters:
+    ///   - prompt: The user's prompt
+    ///   - systemPrompt: Optional system instructions (overrides provider-level instructions)
+    ///   - responseType: The @Generable type to generate
+    ///   - options: Generation options (temperature, max tokens, etc.)
+    /// - Returns: The generated response as the specified @Generable type
+    /// - Throws: LLMError if generation fails
+    ///
+    /// Example:
+    /// ```swift
+    /// @Generable
+    /// struct Summary {
+    ///     @Guide(description: "Brief one-line summary")
+    ///     var brief: String
+    ///
+    ///     @Guide(description: "Key points")
+    ///     var keyPoints: [String]
+    /// }
+    ///
+    /// let provider = AppleIntelligenceProvider.onDevice()
+    /// let summary = try await provider.generateGenerable(
+    ///     prompt: "Summarize this code: ...",
+    ///     systemPrompt: "You are a code analyzer",
+    ///     responseType: Summary.self,
+    ///     options: .default
+    /// )
+    /// print(summary.brief)
+    /// ```
+    public func generateGenerable<T: Generable>(
+        prompt: String,
+        systemPrompt: String?,
+        responseType: T.Type,
+        options: GenerationOptions
+    ) async throws -> T {
+        let modelName = modelType == .onDevice ? "afm-on-device" : "afm-server"
+
+        SwiftLLMLogger.provider.info("→ AFM generateGenerable (\(modelName, privacy: .public))")
+        SwiftLLMLogger.provider.debug("  Prompt: \(prompt, privacy: .public)")
+        SwiftLLMLogger.provider.debug("  Response Type: \(String(describing: T.self), privacy: .public)")
+        if let system = systemPrompt ?? instructions {
+            SwiftLLMLogger.provider.debug("  System: \(system, privacy: .public)")
+        }
+
+        // Create session with system instructions
+        let session: LanguageModelSession
+        if let system = systemPrompt ?? instructions {
+            session = LanguageModelSession(instructions: system)
+        } else {
+            session = LanguageModelSession()
+        }
+
+        // Convert our GenerationOptions to AFM's GenerationOptions
+        let genOptions = FoundationModels.GenerationOptions(
+            sampling: nil,
+            temperature: options.temperature,
+            maximumResponseTokens: options.maxTokens
+        )
+
+        do {
+            // Use AFM's native guided generation with @Generable type
+            let response = try await session.respond(
+                to: prompt,
+                generating: T.self,
+                options: genOptions
+            )
+
+            SwiftLLMLogger.provider.info("← AFM Generable response generated successfully")
+            SwiftLLMLogger.provider.debug("  Generated: \(String(describing: response.content), privacy: .public)")
+
+            return response.content
+        } catch {
+            SwiftLLMLogger.error.logError(error, context: "AFM generateGenerable")
+            throw LLMError.providerError(
+                "AFM failed to generate Generable response: \(error.localizedDescription)",
+                code: nil
+            )
+        }
+    }
+
     public func streamCompletion(
         prompt: String,
         systemPrompt: String?,
