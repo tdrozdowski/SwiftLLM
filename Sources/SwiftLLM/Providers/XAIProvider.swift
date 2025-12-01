@@ -70,7 +70,8 @@ public struct XAIProvider: LLMProvider {
             temperature: options.temperature,
             max_tokens: options.maxTokens,
             top_p: options.topP,
-            stream: false
+            stream: false,
+            response_format: nil
         )
 
         let response = try await client.createChatCompletion(request: request)
@@ -98,27 +99,37 @@ public struct XAIProvider: LLMProvider {
         schema: T.Type,
         options: GenerationOptions
     ) async throws -> T {
-        // Use prompt engineering for JSON output
-        let jsonPrompt = """
-        \(prompt)
+        // Build messages
+        var messages: [XAIAPIClient.ChatCompletionRequest.Message] = []
 
-        Respond with valid JSON only. No other text or markdown formatting.
-        """
+        if let system = systemPrompt {
+            messages.append(.init(role: "system", content: system))
+        }
+        messages.append(.init(role: "user", content: prompt))
 
-        let response = try await generateCompletion(
-            prompt: jsonPrompt,
-            systemPrompt: systemPrompt,
-            options: options
+        // Use response_format to force JSON mode (no markdown wrapping)
+        let request = XAIAPIClient.ChatCompletionRequest(
+            model: options.model ?? defaultModel,
+            messages: messages,
+            temperature: options.temperature,
+            max_tokens: options.maxTokens,
+            top_p: options.topP,
+            stream: false,
+            response_format: XAIAPIClient.ChatCompletionRequest.ResponseFormat(type: "json_object")
         )
 
-        guard let jsonData = response.text.data(using: .utf8) else {
-            throw LLMError.decodingError("Could not convert response to data")
+        let response = try await client.createChatCompletion(request: request)
+
+        guard let choice = response.choices.first,
+              let content = choice.message.content,
+              let jsonData = content.data(using: .utf8) else {
+            throw LLMError.decodingError("No content in response")
         }
 
         do {
             return try JSONDecoder().decode(T.self, from: jsonData)
         } catch {
-            throw LLMError.decodingError("Failed to decode JSON: \(error.localizedDescription)")
+            throw LLMError.decodingError("Failed to decode JSON: \(error.localizedDescription)\nResponse: \(content)")
         }
     }
 
@@ -140,7 +151,8 @@ public struct XAIProvider: LLMProvider {
             temperature: options.temperature,
             max_tokens: options.maxTokens,
             top_p: options.topP,
-            stream: true
+            stream: true,
+            response_format: nil
         )
 
         return client.streamChatCompletion(request: request)

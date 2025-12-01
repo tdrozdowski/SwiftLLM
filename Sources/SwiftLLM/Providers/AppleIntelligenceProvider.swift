@@ -1,6 +1,7 @@
 #if canImport(FoundationModels)
 import Foundation
 import FoundationModels
+import os.log
 
 /// Provider implementation for Apple Foundation Models (AFM)
 /// Uses the official FoundationModels framework from macOS 26+
@@ -49,6 +50,14 @@ public struct AppleIntelligenceProvider: LLMProvider {
         systemPrompt: String?,
         options: GenerationOptions
     ) async throws -> CompletionResponse {
+        let modelName = modelType == .onDevice ? "afm-on-device" : "afm-server"
+
+        SwiftLLMLogger.provider.info("→ AFM generateCompletion (\(modelName, privacy: .public))")
+        SwiftLLMLogger.provider.debug("  Prompt: \(prompt, privacy: .public)")
+        if let system = systemPrompt ?? instructions {
+            SwiftLLMLogger.provider.debug("  System: \(system, privacy: .public)")
+        }
+
         // Create session with system instructions
         let session: LanguageModelSession
         if let system = systemPrompt ?? instructions {
@@ -64,24 +73,36 @@ public struct AppleIntelligenceProvider: LLMProvider {
             maximumResponseTokens: options.maxTokens
         )
 
-        // Generate response
-        let response = try await session.respond(options: genOptions) {
-            prompt
-        }
+        do {
+            // Generate response
+            let response = try await session.respond(options: genOptions) {
+                prompt
+            }
 
-        return CompletionResponse(
-            text: response.content,
-            model: modelType == .onDevice ? "afm-on-device" : "afm-server",
-            usage: TokenUsage(
-                inputTokens: estimateTokensSync(prompt),
-                outputTokens: estimateTokensSync(response.content)
-            ),
-            finishReason: nil,
-            metadata: [
-                "model_type": modelType == .onDevice ? "on-device" : "server",
-                "on_device": "\(modelType == .onDevice)"
-            ]
-        )
+            let inputTokens = estimateTokensSync(prompt)
+            let outputTokens = estimateTokensSync(response.content)
+
+            SwiftLLMLogger.provider.info("← AFM response (\(modelName, privacy: .public))")
+            SwiftLLMLogger.provider.debug("  Response: \(response.content, privacy: .public)")
+            SwiftLLMLogger.provider.debug("  Tokens: \(inputTokens, privacy: .public) in, \(outputTokens, privacy: .public) out")
+
+            return CompletionResponse(
+                text: response.content,
+                model: modelName,
+                usage: TokenUsage(
+                    inputTokens: inputTokens,
+                    outputTokens: outputTokens
+                ),
+                finishReason: nil,
+                metadata: [
+                    "model_type": modelType == .onDevice ? "on-device" : "server",
+                    "on_device": "\(modelType == .onDevice)"
+                ]
+            )
+        } catch {
+            SwiftLLMLogger.error.logError(error, context: "AFM generateCompletion")
+            throw error
+        }
     }
 
     public func generateStructuredOutput<T: Codable>(
@@ -90,6 +111,12 @@ public struct AppleIntelligenceProvider: LLMProvider {
         schema: T.Type,
         options: GenerationOptions
     ) async throws -> T {
+        let modelName = modelType == .onDevice ? "afm-on-device" : "afm-server"
+
+        SwiftLLMLogger.provider.info("→ AFM generateStructuredOutput (\(modelName, privacy: .public))")
+        SwiftLLMLogger.provider.debug("  Prompt: \(prompt, privacy: .public)")
+        SwiftLLMLogger.provider.debug("  Schema: \(String(describing: T.self), privacy: .public)")
+
         // Create session with system instructions
         let session: LanguageModelSession
         if let system = systemPrompt ?? instructions {
@@ -113,18 +140,112 @@ public struct AppleIntelligenceProvider: LLMProvider {
         Respond with valid JSON only. No other text or markdown formatting.
         """
 
-        let response = try await session.respond(options: genOptions) {
-            jsonPrompt
+        do {
+            let response = try await session.respond(options: genOptions) {
+                jsonPrompt
+            }
+
+            SwiftLLMLogger.provider.debug("  JSON Response: \(response.content, privacy: .public)")
+
+            guard let jsonData = response.content.data(using: .utf8) else {
+                throw LLMError.decodingError("Could not convert response to data")
+            }
+
+            let decoded = try JSONDecoder().decode(T.self, from: jsonData)
+            SwiftLLMLogger.provider.info("← AFM structured output decoded successfully")
+            return decoded
+        } catch let error as LLMError {
+            SwiftLLMLogger.error.logError(error, context: "AFM generateStructuredOutput")
+            throw error
+        } catch {
+            let decodingError = LLMError.decodingError("Failed to decode JSON: \(error.localizedDescription)")
+            SwiftLLMLogger.error.logError(decodingError, context: "AFM generateStructuredOutput")
+            throw decodingError
+        }
+    }
+
+    /// Generate a response with native Apple @Generable type (recommended for AFM)
+    ///
+    /// This method uses Apple's native guided generation to constrain the model's output
+    /// to match the schema of a @Generable type. This is more reliable than JSON prompting
+    /// and returns native Swift objects without any parsing.
+    ///
+    /// - Parameters:
+    ///   - prompt: The user's prompt
+    ///   - systemPrompt: Optional system instructions (overrides provider-level instructions)
+    ///   - responseType: The @Generable type to generate
+    ///   - options: Generation options (temperature, max tokens, etc.)
+    /// - Returns: The generated response as the specified @Generable type
+    /// - Throws: LLMError if generation fails
+    ///
+    /// Example:
+    /// ```swift
+    /// @Generable
+    /// struct Summary {
+    ///     @Guide(description: "Brief one-line summary")
+    ///     var brief: String
+    ///
+    ///     @Guide(description: "Key points")
+    ///     var keyPoints: [String]
+    /// }
+    ///
+    /// let provider = AppleIntelligenceProvider.onDevice()
+    /// let summary = try await provider.generateGenerable(
+    ///     prompt: "Summarize this code: ...",
+    ///     systemPrompt: "You are a code analyzer",
+    ///     responseType: Summary.self,
+    ///     options: .default
+    /// )
+    /// print(summary.brief)
+    /// ```
+    public func generateGenerable<T: Generable>(
+        prompt: String,
+        systemPrompt: String?,
+        responseType: T.Type,
+        options: GenerationOptions
+    ) async throws -> T {
+        let modelName = modelType == .onDevice ? "afm-on-device" : "afm-server"
+
+        SwiftLLMLogger.provider.info("→ AFM generateGenerable (\(modelName, privacy: .public))")
+        SwiftLLMLogger.provider.debug("  Prompt: \(prompt, privacy: .public)")
+        SwiftLLMLogger.provider.debug("  Response Type: \(String(describing: T.self), privacy: .public)")
+        if let system = systemPrompt ?? instructions {
+            SwiftLLMLogger.provider.debug("  System: \(system, privacy: .public)")
         }
 
-        guard let jsonData = response.content.data(using: .utf8) else {
-            throw LLMError.decodingError("Could not convert response to data")
+        // Create session with system instructions
+        let session: LanguageModelSession
+        if let system = systemPrompt ?? instructions {
+            session = LanguageModelSession(instructions: system)
+        } else {
+            session = LanguageModelSession()
         }
+
+        // Convert our GenerationOptions to AFM's GenerationOptions
+        let genOptions = FoundationModels.GenerationOptions(
+            sampling: nil,
+            temperature: options.temperature,
+            maximumResponseTokens: options.maxTokens
+        )
 
         do {
-            return try JSONDecoder().decode(T.self, from: jsonData)
+            // Use AFM's native guided generation with @Generable type
+            let response = try await session.respond(
+                to: prompt,
+                generating: T.self,
+                options: genOptions
+            )
+
+            SwiftLLMLogger.provider.info("← AFM Generable response generated successfully")
+            SwiftLLMLogger.provider.debug("  Generated: \(String(describing: response.content), privacy: .public)")
+
+            return response.content
         } catch {
-            throw LLMError.decodingError("Failed to decode JSON: \(error.localizedDescription)")
+            SwiftLLMLogger.error.logError(error, context: "AFM generateGenerable")
+            throw LLMError.providerError(
+                "AFM failed to generate Generable response: \(error.localizedDescription)",
+                code: nil
+            )
         }
     }
 
@@ -133,9 +254,14 @@ public struct AppleIntelligenceProvider: LLMProvider {
         systemPrompt: String?,
         options: GenerationOptions
     ) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
+        let modelName = modelType == .onDevice ? "afm-on-device" : "afm-server"
+
+        return AsyncThrowingStream { continuation in
             Task {
                 do {
+                    SwiftLLMLogger.provider.info("→ AFM streamCompletion (\(modelName, privacy: .public))")
+                    SwiftLLMLogger.provider.debug("  Prompt: \(prompt, privacy: .public)")
+
                     // Create session with system instructions
                     let session: LanguageModelSession
                     if let system = systemPrompt ?? instructions {
@@ -156,13 +282,17 @@ public struct AppleIntelligenceProvider: LLMProvider {
                         prompt
                     }
 
+                    var chunkCount = 0
                     // Iterate over the stream and yield content
                     for try await snapshot in stream {
                         continuation.yield(snapshot.content)
+                        chunkCount += 1
                     }
 
+                    SwiftLLMLogger.provider.info("← AFM stream completed (\(chunkCount, privacy: .public) chunks)")
                     continuation.finish()
                 } catch {
+                    SwiftLLMLogger.error.logError(error, context: "AFM streamCompletion")
                     continuation.finish(throwing: error)
                 }
             }

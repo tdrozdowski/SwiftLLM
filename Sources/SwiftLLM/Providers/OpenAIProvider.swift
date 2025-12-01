@@ -202,6 +202,222 @@ public struct OpenAIProvider: LLMProvider {
     public func estimateTokens(_ text: String) async throws -> Int {
         await client.estimateTokens(text)
     }
+
+    // MARK: - Tool Calling Support
+
+    public func generateCompletionWithTools(
+        context: ConversationContext,
+        toolChoice: ToolChoice = .auto,
+        options: GenerationOptions = .default
+    ) async throws -> CompletionResponse {
+        SwiftLLMLogger.provider.info("Generating completion with \(context.tools.count) tools available")
+        SwiftLLMLogger.provider.debug("Tool choice: \(String(describing: toolChoice))")
+
+        let messages = try convertContextToMessages(context)
+        let tools = convertTools(context.tools)
+        let toolChoiceValue = convertToolChoice(toolChoice)
+
+        let request = OpenAIAPIClient.ChatCompletionRequest(
+            model: options.model ?? defaultModel,
+            messages: messages,
+            temperature: options.temperature,
+            max_tokens: options.maxTokens,
+            top_p: options.topP,
+            frequency_penalty: options.frequencyPenalty,
+            presence_penalty: options.presencePenalty,
+            stop: options.stopSequences,
+            stream: false,
+            response_format: nil,
+            tools: tools,
+            tool_choice: toolChoiceValue
+        )
+
+        let response = try await client.createChatCompletion(request: request)
+        return try buildCompletionResponse(from: response)
+    }
+
+    public func continueWithToolResults(
+        context: ConversationContext,
+        options: GenerationOptions = .default
+    ) async throws -> CompletionResponse {
+        // Same as generateCompletionWithTools - context contains all messages including tool results
+        let messages = try convertContextToMessages(context)
+        let tools = convertTools(context.tools)
+
+        let request = OpenAIAPIClient.ChatCompletionRequest(
+            model: options.model ?? defaultModel,
+            messages: messages,
+            temperature: options.temperature,
+            max_tokens: options.maxTokens,
+            top_p: options.topP,
+            frequency_penalty: options.frequencyPenalty,
+            presence_penalty: options.presencePenalty,
+            stop: options.stopSequences,
+            stream: false,
+            response_format: nil,
+            tools: tools,
+            tool_choice: nil // Let model decide
+        )
+
+        let response = try await client.createChatCompletion(request: request)
+        return try buildCompletionResponse(from: response)
+    }
+
+    // MARK: - Helper Methods
+
+    private func buildCompletionResponse(from response: OpenAIAPIClient.ChatCompletionResponse) throws -> CompletionResponse {
+        guard let choice = response.choices.first else {
+            throw LLMError.decodingError("No choices in response")
+        }
+
+        // Extract tool calls if present
+        let toolCalls = choice.message.tool_calls?.map { openAICall in
+            ToolCall(
+                id: openAICall.id,
+                name: openAICall.function.name,
+                arguments: openAICall.function.arguments
+            )
+        } ?? []
+
+        return CompletionResponse(
+            text: choice.message.content ?? "",
+            model: response.model,
+            usage: TokenUsage(
+                inputTokens: response.usage.prompt_tokens,
+                outputTokens: response.usage.completion_tokens
+            ),
+            finishReason: choice.finish_reason,
+            metadata: ["id": response.id, "created": "\(response.created)"],
+            toolCalls: toolCalls
+        )
+    }
+
+    private func convertContextToMessages(_ context: ConversationContext) throws -> [OpenAIAPIClient.ChatCompletionRequest.Message] {
+        var messages: [OpenAIAPIClient.ChatCompletionRequest.Message] = []
+
+        // Add system prompt if present
+        if let systemPrompt = context.systemPrompt {
+            messages.append(.init(role: "system", content: systemPrompt))
+        }
+
+        // Convert all conversation messages
+        for message in context.messages {
+            switch message.role {
+            case .user:
+                messages.append(.init(role: "user", content: message.content))
+
+            case .assistant:
+                // Convert tool calls if present
+                let openAIToolCalls = message.toolCalls?.map { toolCall in
+                    OpenAIAPIClient.ChatCompletionRequest.OpenAIToolCall(
+                        id: toolCall.id,
+                        type: "function",
+                        function: .init(name: toolCall.name, arguments: toolCall.arguments)
+                    )
+                }
+                messages.append(.init(
+                    role: "assistant",
+                    content: message.content,
+                    tool_calls: openAIToolCalls
+                ))
+
+            case .tool:
+                // OpenAI expects one message per tool result
+                if let toolResults = message.toolResults {
+                    for result in toolResults {
+                        let content: String
+                        switch result.result {
+                        case .success(let text):
+                            content = text
+                        case .error(let error):
+                            content = error.toLLMFormat()
+                        }
+                        messages.append(.init(
+                            role: "tool",
+                            content: content,
+                            tool_call_id: result.toolCallId
+                        ))
+                    }
+                }
+
+            case .system:
+                messages.append(.init(role: "system", content: message.content))
+            }
+        }
+
+        return messages
+    }
+
+    private func convertTools(_ tools: [Tool]) -> [OpenAIAPIClient.ChatCompletionRequest.OpenAITool] {
+        tools.map { tool in
+            // Convert ToolParameters to SendableValue
+            let parametersValue = convertToolParametersToValue(tool.parameters)
+
+            return OpenAIAPIClient.ChatCompletionRequest.OpenAITool(
+                type: "function",
+                function: .init(
+                    name: tool.name,
+                    description: tool.description,
+                    parameters: OpenAIAPIClient.AnyCodable(parametersValue)
+                )
+            )
+        }
+    }
+
+    private func convertToolParametersToValue(_ parameters: ToolParameters) -> OpenAIAPIClient.AnyCodable.SendableValue {
+        var dict: [String: OpenAIAPIClient.AnyCodable.SendableValue] = [
+            "type": .string(parameters.type)
+        ]
+
+        // Convert properties
+        var propertiesDict: [String: OpenAIAPIClient.AnyCodable.SendableValue] = [:]
+        for (key, property) in parameters.properties {
+            propertiesDict[key] = convertToolPropertyToValue(property)
+        }
+        dict["properties"] = .dictionary(propertiesDict)
+
+        // Add required if present
+        if let required = parameters.required {
+            dict["required"] = .array(required.map { .string($0) })
+        }
+
+        return .dictionary(dict)
+    }
+
+    private func convertToolPropertyToValue(_ property: ToolProperty) -> OpenAIAPIClient.AnyCodable.SendableValue {
+        var dict: [String: OpenAIAPIClient.AnyCodable.SendableValue] = [
+            "type": .string(property.type)
+        ]
+
+        if let description = property.description {
+            dict["description"] = .string(description)
+        }
+
+        // Handle enum for string types
+        if case .string(_, let enumValues) = property, let enumValues = enumValues {
+            dict["enum"] = .array(enumValues.map { .string($0) })
+        }
+
+        // Handle array items
+        if let items = property.items {
+            dict["items"] = convertToolPropertyToValue(items)
+        }
+
+        // Handle object properties
+        if let properties = property.properties {
+            var propertiesDict: [String: OpenAIAPIClient.AnyCodable.SendableValue] = [:]
+            for (key, prop) in properties {
+                propertiesDict[key] = convertToolPropertyToValue(prop)
+            }
+            dict["properties"] = .dictionary(propertiesDict)
+        }
+
+        return .dictionary(dict)
+    }
+
+    private func convertToolChoice(_ choice: ToolChoice) -> OpenAIToolChoice {
+        choice.toOpenAIFormat()
+    }
 }
 
 // MARK: - Convenience Initializers
