@@ -121,15 +121,21 @@ public struct XAIProvider: LLMProvider {
         let response = try await client.createChatCompletion(request: request)
 
         guard let choice = response.choices.first,
-              let content = choice.message.content,
-              let jsonData = content.data(using: .utf8) else {
+              let content = choice.message.content else {
             throw LLMError.decodingError("No content in response")
+        }
+
+        // Strip markdown code blocks if present (```json ... ``` or ``` ... ```)
+        let cleanedContent = Self.stripMarkdownCodeBlocks(content)
+
+        guard let jsonData = cleanedContent.data(using: .utf8) else {
+            throw LLMError.decodingError("Failed to convert response to data")
         }
 
         do {
             return try JSONDecoder().decode(T.self, from: jsonData)
         } catch {
-            throw LLMError.decodingError("Failed to decode JSON: \(error.localizedDescription)\nResponse: \(content)")
+            throw LLMError.decodingError("Failed to decode JSON: \(error.localizedDescription)\nResponse: \(cleanedContent)")
         }
     }
 
@@ -160,6 +166,28 @@ public struct XAIProvider: LLMProvider {
 
     public func estimateTokens(_ text: String) async throws -> Int {
         await client.estimateTokens(text)
+    }
+
+    // MARK: - Private Helpers
+
+    /// Strip markdown code blocks from LLM response
+    /// Handles ```json ... ```, ``` ... ```, and plain JSON
+    private static func stripMarkdownCodeBlocks(_ content: String) -> String {
+        var result = content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Check for ```json or ``` at the start
+        if result.hasPrefix("```json") {
+            result = String(result.dropFirst(7))
+        } else if result.hasPrefix("```") {
+            result = String(result.dropFirst(3))
+        }
+
+        // Check for ``` at the end
+        if result.hasSuffix("```") {
+            result = String(result.dropLast(3))
+        }
+
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
