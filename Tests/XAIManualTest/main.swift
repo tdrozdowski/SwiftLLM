@@ -23,7 +23,7 @@ struct XAIManualTest {
         do {
             // Test 1: Simple completion
             print("\n--- Test 1: Simple Completion ---")
-            let provider = XAIProvider(apiKey: apiKey, model: "grok-2-latest")
+            let provider = XAIProvider(apiKey: apiKey, model: "grok-4-1-fast-non-reasoning")
 
             let response = try await provider.generateCompletion(
                 prompt: "Say hello in one word",

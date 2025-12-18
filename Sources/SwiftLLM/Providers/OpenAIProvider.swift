@@ -49,12 +49,22 @@ public struct OpenAIProvider: LLMProvider {
     }
 
     private var modelMaxOutput: Int {
-        if defaultModel.contains("gpt-5") || defaultModel.contains("gpt-4o") {
+        // GPT-5.1 Codex Max - highest output capacity
+        if defaultModel.contains("gpt-5-1-codex-max") || defaultModel.contains("gpt-5-2") {
+            return 128_000
+        } else if defaultModel.contains("gpt-5") {
+            // GPT-5.x models (including GPT-5.1, GPT-5)
+            return 32_768
+        } else if defaultModel.contains("gpt-4.1") || defaultModel.contains("gpt-4-1") {
+            // GPT-4.1 family
+            return 32_768
+        } else if defaultModel.contains("gpt-4o") {
+            // GPT-4o and GPT-4o-mini
             return 16_384
         } else if defaultModel.contains("gpt-4-turbo") {
-            return 4096
+            return 4_096
         } else {
-            return 4096
+            return 4_096
         }
     }
 

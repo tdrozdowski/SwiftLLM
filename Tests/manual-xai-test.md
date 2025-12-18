@@ -18,7 +18,7 @@ import SwiftLLM
 let apiKey = ProcessInfo.processInfo.environment["XAI_API_KEY"] ?? "your-key-from-env"
 
 // Create xAI provider
-let provider = XAIProvider.grok2Latest(apiKey: apiKey)
+let provider = XAIProvider.grok41FastNonReasoning(apiKey: apiKey)
 
 // Test 1: Simple completion
 print("Test 1: Simple completion")
@@ -60,8 +60,9 @@ print("✅ All tests passed!")
    The `stripMarkdownCodeBlocks()` function should handle this.
 
 2. **Model availability**: Ensure you're using an available model:
-   - `grok-2-latest` (recommended)
-   - `grok-2-1212`
-   - `grok-beta`
+   - `grok-4-1-fast-non-reasoning` (recommended)
+   - `grok-4-1-fast-reasoning`
+   - `grok-4-1-thinking`
+   - `grok-4-1`
 
 3. **Error messages**: Check if errors provide useful context about the response format.

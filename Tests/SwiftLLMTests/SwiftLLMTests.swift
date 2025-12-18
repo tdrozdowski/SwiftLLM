@@ -126,7 +126,7 @@ import Foundation
     #expect(provider.capabilities.supportsToolCalling == true)
     #expect(provider.capabilities.supportsLocalExecution == false)
     #expect(provider.capabilities.maxContextTokens == 200_000)
-    #expect(provider.capabilities.maxOutputTokens == 16_384)
+    #expect(provider.capabilities.maxOutputTokens == 32_768)
     #expect(provider.capabilities.pricing != nil)
 }
 
@@ -330,11 +330,11 @@ import Foundation
 }
 
 @Test func xaiModelMapping() {
-    let grok2 = XAIProvider.grok2(apiKey: "test")
-    #expect(grok2.capabilities.maxContextTokens == 131_072)
-
     let grok41 = XAIProvider.grok41(apiKey: "test")
-    #expect(grok41.capabilities.maxContextTokens == 500_000)
+    #expect(grok41.capabilities.maxContextTokens == 256_000)
+
+    let grok41Fast = XAIProvider.grok41FastNonReasoning(apiKey: "test")
+    #expect(grok41Fast.capabilities.maxContextTokens == 2_000_000)
 }
 
 // MARK: - Enhanced Apple Foundation Models Tests

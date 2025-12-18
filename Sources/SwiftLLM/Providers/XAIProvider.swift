@@ -15,33 +15,29 @@ public struct XAIProvider: LLMProvider {
             supportsVision: false,
             supportsToolCalling: true,
             maxContextTokens: modelContextWindow,
-            maxOutputTokens: 4096,
+            maxOutputTokens: 16_000,
             supportsSystemPrompts: true,
             pricing: modelPricing
         )
     }
 
     private var modelContextWindow: Int {
-        // Grok 4.1 Fast has 2M context window
-        if defaultModel.contains("grok-4-1-fast") {
+        // Grok 4 Fast has 2M context window
+        if defaultModel.contains("grok-4-1-fast") || defaultModel.contains("grok-4-fast") {
             return 2_000_000
         } else if defaultModel.contains("grok-4") {
-            return 500_000 // Grok 4.1 standard models
-        } else if defaultModel.contains("grok-2") {
-            return 131_072
+            return 256_000 // Grok 4 standard models
         } else {
-            return 131_072
+            return 256_000
         }
     }
 
     private var modelPricing: LLMPricing? {
-        // Grok 4.1 Fast pricing (as of November 2025)
-        if defaultModel.contains("grok-4-1-fast") {
+        // Grok 4 pricing (as of December 2025)
+        if defaultModel.contains("grok-4-1-fast") || defaultModel.contains("grok-4-fast") {
             return LLMPricing(inputCostPer1M: 0.20, outputCostPer1M: 0.50)
-        } else if defaultModel.contains("grok-4-1") {
-            return LLMPricing(inputCostPer1M: 2.0, outputCostPer1M: 10.0) // Estimated
-        } else if defaultModel.contains("grok-2") {
-            return LLMPricing(inputCostPer1M: 5.0, outputCostPer1M: 15.0)
+        } else if defaultModel.contains("grok-4") {
+            return LLMPricing(inputCostPer1M: 2.0, outputCostPer1M: 10.0)
         }
         return nil
     }
@@ -224,17 +220,5 @@ extension XAIProvider {
     /// Ranks #2 on LMArena at 1465 Elo
     public static func grok41(apiKey: String) -> XAIProvider {
         XAIProvider(apiKey: apiKey, model: "grok-4-1")
-    }
-
-    // MARK: Grok 2 Models (Legacy)
-
-    /// Create provider for Grok-2 (Legacy)
-    public static func grok2(apiKey: String) -> XAIProvider {
-        XAIProvider(apiKey: apiKey, model: "grok-2-latest")
-    }
-
-    /// Create provider for Grok-2 Mini (Legacy)
-    public static func grok2Mini(apiKey: String) -> XAIProvider {
-        XAIProvider(apiKey: apiKey, model: "grok-2-mini-latest")
     }
 }

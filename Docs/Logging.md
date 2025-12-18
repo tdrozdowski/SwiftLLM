@@ -60,7 +60,7 @@ When running in Xcode, logs automatically appear in the debug console.
 → POST https://api.x.ai/v1/chat/completions
   Headers: ["Content-Type": "application/json", "Authorization": "Bearer xai-..."]
   Request Body: {
-    "model": "grok-2-latest",
+    "model": "grok-4-1-fast-non-reasoning",
     "messages": [{"role": "user", "content": "Hello"}],
     "response_format": {"type": "json_object"}
   }
